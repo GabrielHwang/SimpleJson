@@ -60,6 +60,45 @@ public class JsonReader implements Cloneable {
             throw unexpectedTokenError("BEGIN_ARRAY");
         }
     }
+    public void endArray() throws Exception {
+        int p = peeked;
+        if (p == PEEKED_NONE) {
+            doPeek();
+        }
+        if (p == PEEKED_END_ARRAY) {
+            stackSize--;
+            pathIndices[stackSize - 1]++;
+            peeked = PEEKED_NONE;
+        } else {
+            throw unexpectedTokenError("END_ARRAY");
+        }
+    }
+    public void beginObject() throws Exception {
+        int p = peeked;
+        if (p == PEEKED_NONE) {
+            p = doPeek();
+        }
+        if (p == PEEKED_BEGIN_OBJECT) {
+            push(JsonScope.EMPTY_OBJECT);
+            peeked = PEEKED_NONE;
+        } else {
+            throw unexpectedTokenError("BEGIN_OBJECT");
+        }
+    }
+    public void endObject() throws Exception {
+        int p = peeked;
+        if (p == PEEKED_NONE) {
+            p = doPeek();
+        }
+        if (p == PEEKED_END_OBJECT) {
+            stackSize--;
+            pathNames[stackSize] = null;
+            pathIndices[stackSize - 1]++;
+            peeked = PEEKED_NONE;
+        } else {
+            throw unexpectedTokenError("END_OBJECT");
+        }
+    }
 
     private Exception unexpectedTokenError(String beginArray) {
         //TODO
@@ -84,7 +123,7 @@ public class JsonReader implements Cloneable {
         return p != PEEKED_END_OBJECT && p != PEEKED_END_ARRAY && p != PEEKED_EOF;
     }
 
-    public int doPeek() throws Exception {
+    public int doPeek() throws IOException {
         int peekStack = stack[stackSize - 1];
         if (peekStack == JsonScope.EMPTY_ARRAY) {
             stack[stackSize - 1] = JsonScope.NONEMPTY_ARRAY;
@@ -104,16 +143,77 @@ public class JsonReader implements Cloneable {
         return 0;
     }
 
-    private Exception syntaxError(String error) {
+    public String nextName() throws IOException {
+        int p =peeked;
+        if (p == PEEKED_NONE) {
+            p = doPeek();
+        }
+        String result = null;
+        if (p == PEEKED_UNQUOTED_NAME) {
+            result = nextUnquotedName();
+        }
+        return result;
+    }
+
+    @SuppressWarnings("fallthrough")
+    private String nextUnquotedName() throws IOException {
+        StringBuilder builder = null;
+        int i = 0;
+        findNonLiteralCharacter:
+        while(true) {
+            for (;pos + i < limit;i++) {
+                switch(buffer[pos + i]) {
+                    case '/':
+                    case '\\':
+                    case ';':
+                    case '#':
+                    case '=':
+                        checkLenient(); // fall-through
+                    case '{':
+                    case '}':
+                    case '[':
+                    case ']':
+                    case ':':
+                    case ',':
+                    case ' ':
+                    case '\t':
+                    case '\f':
+                    case '\r':
+                    case '\n':
+                        break findNonLiteralCharacter;
+                }
+            }
+            if (i < buffer.length) {
+                if (fillBuffer(i + 1)) {
+                    continue;
+                } else {
+                    break;
+                }
+            }
+            if (builder == null) {
+                builder = new StringBuilder(Math.max(i,16));
+            }
+            builder.append(buffer, pos, i);
+            pos += i;
+            i = 0;
+            if (!fillBuffer(1)) {
+                break;
+            }
+        }
+        String result = (null == builder) ? new String(buffer, pos, i) : builder.append(buffer, pos, i).toString();
+        pos += i;
+        return result;
+    }
+
+    private IOException syntaxError(String error) {
         //TODO
-        Exception exception = new Exception();
-        return exception;
+        return new IOException();
     }
 
     private void checkLenient() {
     }
 
-    private int nextNonWhitespace(boolean throwOnEof) throws Exception {
+    private int nextNonWhitespace(boolean throwOnEof) throws IOException {
         char[] buffer = this.buffer;
         int p = this.pos;
         int l = this.limit;
@@ -146,7 +246,7 @@ public class JsonReader implements Cloneable {
             checkLenient();
             char peek = buffer[pos];
             switch (peek) {
-                case '*':
+                case '*' -> {
                     pos++;
                     if (!skipTo("*/")) {
                         throw syntaxError("Unterminated comment");
@@ -154,14 +254,17 @@ public class JsonReader implements Cloneable {
                     p = pos + 2;
                     l = limit;
                     continue;
-                case '/':
+                }
+                case '/' -> {
                     pos++;
                     skipToEndOfLine();
                     p = pos;
                     l = limit;
                     continue;
-                default:
+                }
+                default -> {
                     return c;
+                }
             }
 
         }
