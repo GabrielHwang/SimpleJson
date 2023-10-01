@@ -2,6 +2,7 @@ package com.gabriel.hson.stream;
 
 import java.io.IOException;
 import java.io.Reader;
+import java.util.Arrays;
 import java.util.Objects;
 
 //reading gson program for understand streaming API
@@ -27,6 +28,11 @@ public class JsonReader implements Cloneable {
     private static final int PEEKED_EOF = 17;
     private int[] stack = new int[32];
     private int stackSize = 0;
+    {
+        stack[stackSize++] =JsonScope.EMPTY_DOCUMENT;
+    }
+    private String[] pathNames = new String[32];
+    private int[] pathIndices = new int[32];
     private final int BUFFER_SIZE =1024;
     private final char[] buffer = new char[BUFFER_SIZE];
     private int pos = 0;
@@ -39,6 +45,35 @@ public class JsonReader implements Cloneable {
 
     public JsonReader(Reader in) {
         this.in = Objects.requireNonNull(in, "input is null");
+    }
+
+    public void beginArray() throws Exception {
+        int p =peeked;
+        if (p == PEEKED_NONE) {
+            p = doPeek();
+        }
+        if (p == PEEKED_BEGIN_ARRAY) {
+            push(JsonScope.EMPTY_ARRAY);
+            pathIndices[stackSize - 1] = 0;
+            peeked = PEEKED_NONE;
+        } else{
+            throw unexpectedTokenError("BEGIN_ARRAY");
+        }
+    }
+
+    private Exception unexpectedTokenError(String beginArray) {
+        //TODO
+        return new Exception();
+    }
+
+    private void push(int newTop) {
+        if (stackSize == stack.length) {
+            int newLength =stackSize * 2;
+            stack = Arrays.copyOf(stack, newLength);
+            pathIndices = Arrays.copyOf(pathIndices, newLength);
+            pathNames = Arrays.copyOf(pathNames, newLength);
+        }
+        stack[stackSize++] = newTop;
     }
 
     public boolean hasNext() throws Exception {
@@ -78,8 +113,8 @@ public class JsonReader implements Cloneable {
     private void checkLenient() {
     }
 
-    private int nextNonWhitespace(boolean throwOnEof) throws IOException {
-        char buffer[] = this.buffer;
+    private int nextNonWhitespace(boolean throwOnEof) throws Exception {
+        char[] buffer = this.buffer;
         int p = this.pos;
         int l = this.limit;
         while(true) {
@@ -108,12 +143,51 @@ public class JsonReader implements Cloneable {
                     return c;
                 }
             }
+            checkLenient();
+            char peek = buffer[pos];
+            switch (peek) {
+                case '*':
+                    pos++;
+                    if (!skipTo("*/")) {
+                        throw syntaxError("Unterminated comment");
+                    }
+                    p = pos + 2;
+                    l = limit;
+                    continue;
+                case '/':
+                    pos++;
+                    skipToEndOfLine();
+                    p = pos;
+                    l = limit;
+                    continue;
+                default:
+                    return c;
+            }
 
         }
         if (throwOnEof) {
             throw new IOException();
         }else {
             return -1;
+        }
+    }
+
+    private boolean skipTo(String s) {
+        int length = s.length();
+        return false;
+    }
+
+    private void skipToEndOfLine() throws IOException {
+        while (pos < limit || fillBuffer(1)) {
+            char c =buffer[pos++];
+            if (c == '\n') {
+                lineNumber++;
+                lineStart = pos;
+                break;
+            } else if (c == '\r') {
+                break;
+            }
+
         }
     }
 
