@@ -155,6 +155,35 @@ public class JsonReader implements Cloneable {
         return result;
     }
 
+    public boolean nextBoolean() throws Exception {
+        int p = peeked;
+        if (p == PEEKED_NONE) {
+            p = doPeek();
+        }
+        if (p == PEEKED_TRUE) {
+            peeked = PEEKED_NONE;
+            pathIndices[stackSize - 1]++;
+            return true;
+        } else if (p == PEEKED_FALSE) {
+            peeked = PEEKED_NONE;
+            pathIndices[stackSize - 1]++;
+            return false;
+        }
+        throw unexpectedTokenError("a boolean");
+    }
+    public void nextNull() throws Exception {
+        int p = peeked;
+        if (p == PEEKED_NONE) {
+            p = doPeek();
+        }
+        if (p == PEEKED_NULL) {
+            peeked = PEEKED_NONE;
+            pathIndices[stackSize - 1]++;
+        } else {
+            throw unexpectedTokenError("null");
+        }
+    }
+
     @SuppressWarnings("fallthrough")
     private String nextUnquotedName() throws IOException {
         StringBuilder builder = null;
